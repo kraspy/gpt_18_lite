@@ -19,6 +19,14 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 openai.api_key = OPENAI_API_KEY
 
 
+async def strip_messages_list(messages, max_messages=5):
+    if len(messages) > max_messages:
+        messages = messages[0 - max_messages:]
+    
+    return messages
+        
+
+
 # функция для синхронного общения с chatgpt
 async def get_answer(text):
     payload = {"text":text}
@@ -40,6 +48,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # при первом запуске бота добавляем этого пользователя в словарь
     if update.message.from_user.id not in context.bot_data.keys():
         context.bot_data[update.message.from_user.id] = 3
+        context.user_data['messages'] = []
     
     # возвращаем текстовое сообщение пользователю
     await update.message.reply_text('Задайте любой вопрос ChatGPT')
@@ -61,6 +70,13 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(f'У вас осталось: {rest_of_requests} запросов')
 
+async def history_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text_messages = json.dumps(context.user_data['messages'], ensure_ascii=False, indent=4)
+    await update.message.reply_text(
+        text_messages
+    )
+
+
 
 # функция-обработчик текстовых сообщений
 async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -73,7 +89,16 @@ async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # res = await get_answer(update.message.text)
         res = await get_answer_async(update.message.text)
         await context.bot.edit_message_text(text=res['message'], chat_id=update.message.chat_id, message_id=first_message.message_id)
-
+        
+        message = {
+            'user': update.message.text,
+            'gpt': res['message']
+        }
+        
+        context.user_data['messages'].append(message)
+        
+        context.user_data['messages'] = await strip_messages_list(context.user_data['messages'])
+        
         # уменьшаем количество доступных запросов на 1
         context.bot_data[update.message.from_user.id]-=1
     else:
@@ -111,6 +136,7 @@ def main():
     application.add_handler(CommandHandler("start", start, block=True))
     application.add_handler(CommandHandler("data", data, block=True))
     application.add_handler(CommandHandler("status", status_cmd, block=True))
+    application.add_handler(CommandHandler("history", history_cmd, block=True))
     application.add_handler(MessageHandler(filters.TEXT, text, block=True))
 
     # запуск бота (нажать Ctrl+C для остановки)
